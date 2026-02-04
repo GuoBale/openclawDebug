@@ -23,6 +23,11 @@
    ./diagnose_providers.sh
    ```
 
+4. **`check_python_deps.sh`** - 检查并安装 Python 依赖
+   ```bash
+   ./check_python_deps.sh
+   ```
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -75,7 +80,21 @@ Error: Gateway service install not supported on android
 - **现象**（第 29-32 行）：
   - `[plugins]: command not found` 错误（可能是 shell 配置问题）
 
-#### 2.4 模型提供者速率限制问题 ⚠️ 新发现
+#### 2.4 Python 依赖缺失问题 ⚠️ 新发现
+- **现象**（第 993-1006 行）：
+  ```
+  [tools] exec failed: Generating QR code for Xiaomi login...
+  ModuleNotFoundError: No module named 'PIL'
+  ```
+- **问题分析**：
+  - OpenClaw 的 mijia 技能需要生成二维码
+  - 脚本位于：`~/.openclaw/workspace/skills/mijia/scripts/generate_qr.py`
+  - 缺少 Python 的 PIL 模块（Pillow 包）
+  - 错误发生在 `qrcode` 库尝试导入 PIL 时
+- **影响**：
+  - 无法使用 mijia 相关功能（如小米登录二维码生成）
+
+#### 2.5 模型提供者速率限制问题 ⚠️ 新发现
 - **现象**（第 144 行）：
   ```
   Embedded agent failed before reply: All models failed (2): 
@@ -156,9 +175,49 @@ lsof -ti:18789 | xargs kill
 
 检查并修复 feishu 插件的重复注册问题，避免配置警告。
 
-### 方案 4: 解决模型提供者速率限制问题
+### 方案 4: 解决 Python 依赖缺失问题
 
-#### 4.1 检查配置文件
+#### 4.1 安装 Pillow 包
+
+在 Android/Termux 环境中安装 Pillow：
+
+```bash
+# 使用 pip 安装 Pillow
+pip install Pillow
+
+# 或者使用 pip3
+pip3 install Pillow
+
+# 如果使用虚拟环境，先激活虚拟环境
+source ~/.openclaw/venv/bin/activate  # 如果存在
+pip install Pillow
+```
+
+#### 4.2 验证安装
+
+```bash
+# 测试 PIL 模块是否可用
+python3 -c "from PIL import Image; print('PIL 安装成功')"
+
+# 或者
+python -c "from PIL import Image; print('PIL 安装成功')"
+```
+
+#### 4.3 检查其他可能缺失的依赖
+
+```bash
+# 检查 qrcode 库
+python3 -c "import qrcode; print('qrcode 可用')"
+
+# 如果缺失，安装
+pip install qrcode[pil]
+```
+
+**注意**：`qrcode[pil]` 会同时安装 qrcode 和 Pillow。
+
+### 方案 5: 解决模型提供者速率限制问题
+
+#### 5.1 检查配置文件
 
 在 Android 设备上检查 OpenClaw 配置文件：
 
@@ -177,7 +236,7 @@ cat ~/.openclaw/config.json
 - `profiles` 配置是否正确
 - `cooldown` 相关设置
 
-#### 4.2 诊断步骤
+#### 5.2 诊断步骤
 
 **快速诊断**（使用提供的脚本）：
 ```bash
@@ -201,7 +260,7 @@ openclaw config path
 cat $(openclaw config path)
 ```
 
-#### 4.3 可能的修复方法
+#### 5.3 可能的修复方法
 
 1. **调整速率限制配置**：
    - 增加 `rate_limit` 的值
@@ -224,6 +283,10 @@ cat $(openclaw config path)
 - [ ] 分析 `service-BoDHq_LN.js` 源码，定位 Android 检测逻辑
 - [ ] 实现 Android 兼容的服务管理方案
 - [ ] 修复 feishu 插件重复注册问题
+- [x] **解决 Python 依赖缺失问题**（已完成脚本）
+  - [x] 创建依赖检查脚本 `check_python_deps.sh`
+  - [ ] 在 Android 设备上测试脚本
+  - [ ] 验证 Pillow 安装后 mijia 功能正常
 - [ ] **诊断模型提供者速率限制问题**（优先级：高）
   - [ ] 检查 OpenClaw 配置文件中的 rate_limit 设置
   - [ ] 验证 minimax 和 kimi-coding 的 API keys 配置
