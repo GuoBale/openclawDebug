@@ -33,6 +33,11 @@
    ./check_node_deps.sh
    ```
 
+6. **`fix_feishu_zod.sh`** - 修复 feishu 扩展的 zod 依赖问题
+   ```bash
+   ./fix_feishu_zod.sh
+   ```
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -96,10 +101,12 @@ Error: Gateway service install not supported on android
   - feishu 插件需要 `zod` 模块（TypeScript 验证库）
   - 错误发生在加载用户自定义的 feishu 扩展时
   - 扩展位置：`~/.openclaw/extensions/feishu/`
-  - 全局安装的 feishu 插件正常，但用户扩展缺少依赖
+  - **关键问题**：即使全局安装了 `zod`，扩展仍无法找到它
+  - **原因**：Node.js 模块解析机制优先查找本地 `node_modules`，扩展在 `~/.openclaw/extensions/feishu` 目录中时，会在该目录的 `node_modules` 中查找，而不是全局 `node_modules`
+  - 全局安装的 feishu 插件正常，但用户扩展缺少本地依赖
 - **影响**：
-  - 用户自定义的 feishu 扩展无法加载
-  - 可能影响其他自定义扩展的功能
+  - 用户自定义的 feishu 扩展无法加载（第 268 行）
+  - Gateway 仍能正常启动，但 feishu 功能受限
 
 #### 2.5 进程无法完全停止问题 ⚠️ 新发现
 - **现象**（第 979 行）：
@@ -235,6 +242,24 @@ npm install zod --save
   ```bash
   cd ~/.openclaw/extensions/feishu
   npm install zod --save  # 直接安装需要的包
+  ```
+
+**⚠️ 重要：全局安装 vs 本地安装**：
+- 虽然全局安装了 `zod`，但扩展可能仍然无法找到它
+- **原因**：Node.js 模块解析优先查找本地 `node_modules`，扩展在 `~/.openclaw/extensions/feishu` 目录中时，会在该目录的 `node_modules` 中查找
+- **解决方案**：必须在扩展目录本地安装依赖
+  ```bash
+  # 方法 1: 使用修复脚本（推荐）✨
+  ./fix_feishu_zod.sh
+  
+  # 方法 2: 手动在扩展目录安装
+  cd ~/.openclaw/extensions/feishu
+  npm install zod --save
+  
+  # 方法 3: 从全局安装创建符号链接
+  cd ~/.openclaw/extensions/feishu
+  mkdir -p node_modules
+  ln -s $(npm root -g)/zod node_modules/zod
   ```
 
 #### 4.2 验证安装
