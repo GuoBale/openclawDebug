@@ -215,16 +215,27 @@ lsof -ti:18789 | xargs kill
 在 Android/Termux 环境中安装 Node.js 依赖：
 
 ```bash
-# 方法 1: 在扩展目录安装（推荐）
-cd ~/.openclaw/extensions/feishu
-npm install
+# 方法 1: 使用检查脚本（推荐）✨
+./check_node_deps.sh
+# 脚本会自动处理 workspace 协议问题
 
-# 方法 2: 全局安装
+# 方法 2: 全局安装（最简单）
 npm install -g zod
 
-# 方法 3: 使用检查脚本（推荐）
-./check_node_deps.sh
+# 方法 3: 在扩展目录直接安装依赖
+cd ~/.openclaw/extensions/feishu
+npm install zod --save
+# 注意：如果 package.json 使用 workspace:* 协议，直接安装具体依赖
 ```
+
+**⚠️ 关于 workspace 协议**：
+- 如果扩展的 `package.json` 包含 `workspace:*` 协议，这是 monorepo 的 workspace 依赖
+- 在单独安装时，`npm install` 会失败并提示 `Unsupported URL Type "workspace:"`
+- **解决方案**：直接安装具体依赖，而不是运行 `npm install`
+  ```bash
+  cd ~/.openclaw/extensions/feishu
+  npm install zod --save  # 直接安装需要的包
+  ```
 
 #### 4.2 验证安装
 
@@ -242,9 +253,31 @@ ls -la ~/.openclaw/extensions/feishu/node_modules/
 # 查看扩展的 package.json
 cat ~/.openclaw/extensions/feishu/package.json
 
-# 如果有 package.json，安装所有依赖
+# 检查是否使用 workspace 协议
+grep -i "workspace" ~/.openclaw/extensions/feishu/package.json
+
+# 如果使用 workspace 协议，直接安装需要的依赖
 cd ~/.openclaw/extensions/feishu
-npm install
+npm install zod --save  # 替换为实际需要的包名
+
+# 验证安装
+node -e "require('zod'); console.log('zod 可用')"
+```
+
+#### 4.4 验证全局安装
+
+全局安装的模块可能无法通过简单的 `require()` 验证，但通常仍可使用：
+
+```bash
+# 检查全局 node_modules 路径
+npm root -g
+
+# 检查模块是否存在
+ls -la $(npm root -g)/zod
+
+# 设置 NODE_PATH 后验证
+export NODE_PATH=$(npm root -g):$NODE_PATH
+node -e "require('zod'); console.log('zod 可用')"
 ```
 
 ### 方案 5: 解决进程无法停止问题
