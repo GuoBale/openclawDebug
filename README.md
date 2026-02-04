@@ -2,6 +2,27 @@
 
 这个仓库用于调试和修复 OpenClaw 在 Android/Termux 环境下的兼容性问题。
 
+## 快速开始
+
+### 可用脚本
+
+1. **`start_gateway.sh`** - 启动 Gateway（自动关闭占用端口）
+   ```bash
+   ./start_gateway.sh [PORT] [BIND_ADDRESS]
+   # 示例: ./start_gateway.sh 18789 loopback
+   ```
+
+2. **`kill_gateway.sh`** - 停止 Gateway
+   ```bash
+   ./kill_gateway.sh [PORT]
+   # 示例: ./kill_gateway.sh 18789
+   ```
+
+3. **`diagnose_providers.sh`** - 诊断模型提供者问题
+   ```bash
+   ./diagnose_providers.sh
+   ```
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -90,7 +111,28 @@ runGatewayCommand$1 (gateway-cli-CvZ1b_8x.js:16146)
 
 ### 方案 2: 临时解决方案
 
-在 Android 环境下，手动管理网关进程：
+#### 2.1 使用启动脚本（推荐）✨
+
+**自动关闭占用端口并启动 Gateway**：
+
+```bash
+# 使用默认端口 18789 和 loopback 绑定
+./start_gateway.sh
+
+# 指定端口
+./start_gateway.sh 18789
+
+# 指定端口和绑定地址
+./start_gateway.sh 18789 loopback
+```
+
+脚本功能：
+- ✅ 自动检测并关闭占用端口的进程
+- ✅ 验证端口已释放
+- ✅ 启动 OpenClaw Gateway
+- ✅ 支持多种进程查找方法（lsof/netstat/ps）
+
+#### 2.2 手动管理网关进程
 
 ```bash
 # 查找网关进程
@@ -101,6 +143,9 @@ kill 21348
 
 # 或者使用端口查找并 kill
 lsof -ti:18789 | xargs kill
+
+# 使用提供的停止脚本
+./kill_gateway.sh [PORT]
 ```
 
 ### 方案 3: 修复插件重复问题
