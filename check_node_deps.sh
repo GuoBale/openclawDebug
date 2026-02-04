@@ -132,8 +132,8 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     
     # 为每个扩展安装依赖
     for i in "${!MISSING_DEPS[@]}"; do
-        local dep="${MISSING_DEPS[$i]}"
-        local location="${MISSING_LOCATIONS[$i]}"
+        dep="${MISSING_DEPS[$i]}"
+        location="${MISSING_LOCATIONS[$i]}"
         
         if [ -d "$location" ]; then
             echo -e "${BLUE}在 $location 安装 $dep...${NC}"
@@ -174,8 +174,8 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     echo "7️⃣ 验证安装..."
     ALL_OK=true
     for i in "${!MISSING_DEPS[@]}"; do
-        local dep="${MISSING_DEPS[$i]}"
-        local location="${MISSING_LOCATIONS[$i]}"
+        dep="${MISSING_DEPS[$i]}"
+        location="${MISSING_LOCATIONS[$i]}"
         
         if [ -d "$location/node_modules/$dep" ] || node -e "require('$dep')" 2>/dev/null; then
             echo -e "${GREEN}✅ $dep 验证成功${NC}"
