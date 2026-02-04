@@ -58,10 +58,12 @@ Error: Gateway service install not supported on android
 ### 2. 次要问题
 
 #### 2.1 网关已运行但无法停止
-- **现象**（第 55-59 行）：
-  - Gateway 已经在运行（pid 21348）
-  - 端口 18789 已被占用
-  - 尝试停止时触发服务管理错误
+- **现象**（第 55-59, 218-227 行）：
+  - Gateway 已经在运行（pid 21348 或 6300）
+  - 端口 18789 可能被占用，也可能未被占用
+  - OpenClaw 使用锁文件机制，即使端口未被占用也会检测到已有实例
+  - 错误信息：`Gateway failed to start: gateway already running (pid XXX); lock timeout after 5000ms`
+  - 尝试停止时触发服务管理错误：`Gateway service install not supported on android`
 
 #### 2.2 插件配置警告
 - **现象**（第 25-28, 34, 44, 54 行）：
@@ -127,10 +129,12 @@ runGatewayCommand$1 (gateway-cli-CvZ1b_8x.js:16146)
 ```
 
 脚本功能：
-- ✅ 自动检测并关闭占用端口的进程
+- ✅ 自动检测并关闭所有 OpenClaw 相关进程（不仅仅是端口）
+- ✅ 清理锁文件（解决 "gateway already running" 错误）
 - ✅ 验证端口已释放
 - ✅ 启动 OpenClaw Gateway
 - ✅ 支持多种进程查找方法（lsof/netstat/ps）
+- ✅ 智能处理进程终止（先正常终止，失败则强制终止）
 
 #### 2.2 手动管理网关进程
 

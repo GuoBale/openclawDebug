@@ -19,6 +19,12 @@ echo "端口: $PORT"
 echo "绑定地址: $BIND"
 echo ""
 
+# 函数：查找所有 OpenClaw 相关进程
+find_openclaw_processes() {
+    # 查找所有 openclaw 相关进程
+    ps aux 2>/dev/null | grep -E "openclaw|node.*gateway" | grep -v grep | awk '{print $2}'
+}
+
 # 函数：查找占用端口的进程
 find_port_process() {
     local port=$1
@@ -34,45 +40,123 @@ find_port_process() {
     fi
 }
 
+# 函数：查找并清理锁文件
+clean_lock_files() {
+    local port=$1
+    local lock_dirs=(
+        "$HOME/.cache/openclaw"
+        "$HOME/.local/share/openclaw"
+        "$HOME/.config/openclaw"
+        "/tmp"
+        "/var/tmp"
+    )
+    
+    local lock_patterns=(
+        "*gateway*.lock"
+        "*openclaw*.lock"
+        "*gateway*$port*.lock"
+        ".gateway.lock"
+        ".openclaw-gateway.lock"
+    )
+    
+    local found_locks=0
+    
+    for dir in "${lock_dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            for pattern in "${lock_patterns[@]}"; do
+                find "$dir" -name "$pattern" -type f 2>/dev/null | while read -r lockfile; do
+                    echo -e "${YELLOW}🔓 发现锁文件: $lockfile${NC}"
+                    rm -f "$lockfile" 2>/dev/null && echo -e "${GREEN}✅ 已删除锁文件${NC}" || echo -e "${RED}❌ 无法删除锁文件${NC}"
+                    found_locks=1
+                done
+            done
+        fi
+    done
+    
+    # 也检查当前目录
+    for pattern in "${lock_patterns[@]}"; do
+        find . -maxdepth 1 -name "$pattern" -type f 2>/dev/null | while read -r lockfile; do
+            echo -e "${YELLOW}🔓 发现锁文件: $lockfile${NC}"
+            rm -f "$lockfile" 2>/dev/null && echo -e "${GREEN}✅ 已删除锁文件${NC}" || echo -e "${RED}❌ 无法删除锁文件${NC}"
+            found_locks=1
+        done
+    done
+    
+    return $found_locks
+}
+
+# 函数：强制关闭所有 OpenClaw 相关进程
+kill_openclaw_processes() {
+    local pids=$(find_openclaw_processes)
+    
+    if [ -z "$pids" ]; then
+        echo -e "${GREEN}✅ 未发现运行中的 OpenClaw 进程${NC}"
+        return 0
+    fi
+    
+    echo -e "${YELLOW}🔍 发现 OpenClaw 进程: $(echo $pids | tr '\n' ' ')${NC}"
+    
+    # 先尝试正常终止所有进程
+    for pid in $pids; do
+        if ps -p $pid > /dev/null 2>&1; then
+            echo -e "${YELLOW}🛑 尝试停止进程 PID $pid...${NC}"
+            kill $pid 2>/dev/null
+        fi
+    done
+    
+    # 等待进程结束
+    sleep 3
+    
+    # 检查是否还有进程在运行，如果有则强制终止
+    local remaining_pids=$(find_openclaw_processes)
+    if [ -n "$remaining_pids" ]; then
+        echo -e "${YELLOW}⚠️  部分进程仍在运行，强制停止...${NC}"
+        for pid in $remaining_pids; do
+            if ps -p $pid > /dev/null 2>&1; then
+                echo -e "${YELLOW}🔪 强制停止进程 PID $pid...${NC}"
+                kill -9 $pid 2>/dev/null
+            fi
+        done
+        sleep 2
+    fi
+    
+    # 最终检查
+    local final_pids=$(find_openclaw_processes)
+    if [ -z "$final_pids" ]; then
+        echo -e "${GREEN}✅ 所有 OpenClaw 进程已成功停止${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ 仍有进程无法停止: $(echo $final_pids | tr '\n' ' ')${NC}"
+        return 1
+    fi
+}
+
 # 函数：强制关闭占用端口的进程
 kill_port_process() {
     local port=$1
-    local attempts=0
-    local max_attempts=3
+    local pid=$(find_port_process $port)
     
-    while [ $attempts -lt $max_attempts ]; do
-        local pid=$(find_port_process $port)
-        
-        if [ -z "$pid" ]; then
-            echo -e "${GREEN}✅ 端口 $port 未被占用${NC}"
-            return 0
-        fi
-        
-        echo -e "${YELLOW}🔍 发现占用端口的进程: PID $pid${NC}"
-        
-        # 尝试正常终止
-        if [ $attempts -eq 0 ]; then
-            echo -e "${YELLOW}🛑 尝试正常停止进程...${NC}"
-            kill $pid 2>/dev/null
-        else
-            echo -e "${YELLOW}⚠️  进程仍在运行，强制停止...${NC}"
-            kill -9 $pid 2>/dev/null
-        fi
-        
-        # 等待进程结束
-        sleep 2
-        
-        # 检查进程是否还在运行
-        if ! ps -p $pid > /dev/null 2>&1; then
-            echo -e "${GREEN}✅ 进程已成功停止${NC}"
-            return 0
-        fi
-        
-        attempts=$((attempts + 1))
-    done
+    if [ -z "$pid" ]; then
+        return 0
+    fi
     
-    echo -e "${RED}❌ 无法停止占用端口的进程${NC}"
-    return 1
+    echo -e "${YELLOW}🔍 发现占用端口的进程: PID $pid${NC}"
+    kill $pid 2>/dev/null
+    sleep 2
+    
+    if ps -p $pid > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  进程仍在运行，强制停止...${NC}"
+        kill -9 $pid 2>/dev/null
+        sleep 1
+    fi
+    
+    if ! ps -p $pid > /dev/null 2>&1; then
+        echo -e "${GREEN}✅ 进程已成功停止${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ 无法停止进程${NC}"
+        return 1
+    fi
 }
 
 # 函数：检查端口是否可用
@@ -87,15 +171,26 @@ check_port_available() {
     fi
 }
 
-# 步骤 1: 关闭占用端口的进程
-echo -e "${BLUE}步骤 1: 检查并关闭占用端口的进程...${NC}"
-if ! kill_port_process $PORT; then
-    echo -e "${RED}❌ 无法清理端口，退出${NC}"
-    exit 1
+# 步骤 1: 关闭所有 OpenClaw 相关进程
+echo -e "${BLUE}步骤 1: 检查并关闭所有 OpenClaw 进程...${NC}"
+kill_openclaw_processes
+
+# 步骤 1.5: 关闭占用端口的进程（额外检查）
+echo ""
+echo -e "${BLUE}步骤 1.5: 检查并关闭占用端口的进程...${NC}"
+kill_port_process $PORT
+
+# 步骤 1.6: 清理锁文件
+echo ""
+echo -e "${BLUE}步骤 1.6: 清理锁文件...${NC}"
+if clean_lock_files $PORT; then
+    echo -e "${GREEN}✅ 锁文件清理完成${NC}"
+else
+    echo -e "${YELLOW}⚠️  未发现锁文件（可能已被清理）${NC}"
 fi
 
-# 额外等待，确保端口完全释放
-sleep 1
+# 额外等待，确保所有资源完全释放
+sleep 2
 
 # 步骤 2: 验证端口已释放
 echo ""
