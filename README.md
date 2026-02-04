@@ -38,6 +38,11 @@
    ./fix_feishu_zod.sh
    ```
 
+7. **`fix_duplicate_plugin.sh`** - 修复重复插件 ID 警告
+   ```bash
+   ./fix_duplicate_plugin.sh
+   ```
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -213,7 +218,51 @@ lsof -ti:18789 | xargs kill
 
 ### 方案 3: 修复插件重复问题
 
-检查并修复 feishu 插件的重复注册问题，避免配置警告。
+#### 3.1 问题说明
+
+OpenClaw 同时加载了全局安装和用户自定义的 feishu 扩展，导致重复插件 ID 警告：
+- 全局插件：`/data/data/com.termux/files/usr/lib/node_modules/openclaw/extensions/feishu`
+- 用户扩展：`~/.openclaw/extensions/feishu`
+
+#### 3.2 使用修复脚本（推荐）✨
+
+```bash
+./fix_duplicate_plugin.sh
+```
+
+脚本提供以下选项：
+1. **保留用户扩展，禁用全局插件**（推荐，如果用户扩展是自定义的）
+   - 重命名全局插件目录为 `.disabled`
+   - 只使用用户扩展
+
+2. **保留全局插件，删除/重命名用户扩展**（如果用户扩展只是复制）
+   - 重命名用户扩展目录为 `.disabled`
+   - 只使用全局插件
+
+3. **重命名用户扩展**（保留两个但避免冲突）
+   - 重命名用户扩展目录
+   - 需要修改扩展的 ID 才能完全避免冲突
+
+4. **查看详细信息后决定**
+   - 显示两个插件的详细信息
+   - 帮助做出决策
+
+#### 3.3 手动处理
+
+```bash
+# 选项 A: 禁用用户扩展（使用全局插件）
+mv ~/.openclaw/extensions/feishu ~/.openclaw/extensions/feishu.disabled
+
+# 选项 B: 禁用全局插件（需要 root 权限，不推荐）
+# sudo mv /data/data/com.termux/files/usr/lib/node_modules/openclaw/extensions/feishu \
+#         /data/data/com.termux/files/usr/lib/node_modules/openclaw/extensions/feishu.disabled
+```
+
+#### 3.4 忽略警告（可选）
+
+- 警告不影响功能，可以忽略
+- 后加载的插件会覆盖先加载的
+- 如果用户扩展成功加载，它会覆盖全局插件
 
 ### 方案 4: 解决 Node.js 依赖缺失问题
 
