@@ -85,6 +85,27 @@ clean_lock_files() {
     return $found_locks
 }
 
+# 函数：检查进程是否可终止
+is_process_killable() {
+    local pid=$1
+    # 检查进程状态，排除僵尸进程和系统进程
+    local state=$(ps -p $pid -o state= 2>/dev/null)
+    if [ -z "$state" ]; then
+        return 1  # 进程不存在
+    fi
+    # Z = 僵尸进程，无法终止
+    if [ "$state" = "Z" ]; then
+        return 1
+    fi
+    # 检查进程是否属于当前用户
+    local owner=$(ps -p $pid -o user= 2>/dev/null)
+    local current_user=$(whoami)
+    if [ "$owner" != "$current_user" ]; then
+        return 1  # 不是当前用户的进程
+    fi
+    return 0
+}
+
 # 函数：强制关闭所有 OpenClaw 相关进程
 kill_openclaw_processes() {
     local pids=$(find_openclaw_processes)
@@ -96,38 +117,72 @@ kill_openclaw_processes() {
     
     echo -e "${YELLOW}🔍 发现 OpenClaw 进程: $(echo $pids | tr '\n' ' ')${NC}"
     
-    # 先尝试正常终止所有进程
+    local killable_pids=""
+    local unkillable_pids=""
+    
+    # 分类进程
     for pid in $pids; do
-        if ps -p $pid > /dev/null 2>&1; then
-            echo -e "${YELLOW}🛑 尝试停止进程 PID $pid...${NC}"
-            kill $pid 2>/dev/null
+        if is_process_killable $pid; then
+            killable_pids="$killable_pids $pid"
+        else
+            unkillable_pids="$unkillable_pids $pid"
         fi
     done
     
-    # 等待进程结束
-    sleep 3
-    
-    # 检查是否还有进程在运行，如果有则强制终止
-    local remaining_pids=$(find_openclaw_processes)
-    if [ -n "$remaining_pids" ]; then
-        echo -e "${YELLOW}⚠️  部分进程仍在运行，强制停止...${NC}"
-        for pid in $remaining_pids; do
+    # 处理可终止的进程
+    if [ -n "$killable_pids" ]; then
+        for pid in $killable_pids; do
             if ps -p $pid > /dev/null 2>&1; then
-                echo -e "${YELLOW}🔪 强制停止进程 PID $pid...${NC}"
-                kill -9 $pid 2>/dev/null
+                echo -e "${YELLOW}🛑 尝试停止进程 PID $pid...${NC}"
+                kill $pid 2>/dev/null
             fi
         done
-        sleep 2
+        
+        # 等待进程结束
+        sleep 3
+        
+        # 检查是否还有进程在运行，如果有则强制终止
+        local remaining_killable=""
+        for pid in $killable_pids; do
+            if ps -p $pid > /dev/null 2>&1; then
+                remaining_killable="$remaining_killable $pid"
+            fi
+        done
+        
+        if [ -n "$remaining_killable" ]; then
+            echo -e "${YELLOW}⚠️  部分进程仍在运行，强制停止...${NC}"
+            for pid in $remaining_killable; do
+                if ps -p $pid > /dev/null 2>&1; then
+                    echo -e "${YELLOW}🔪 强制停止进程 PID $pid...${NC}"
+                    kill -9 $pid 2>/dev/null
+                fi
+            done
+            sleep 2
+        fi
     fi
     
-    # 最终检查
-    local final_pids=$(find_openclaw_processes)
-    if [ -z "$final_pids" ]; then
-        echo -e "${GREEN}✅ 所有 OpenClaw 进程已成功停止${NC}"
+    # 处理不可终止的进程（可能是僵尸进程或系统进程）
+    if [ -n "$unkillable_pids" ]; then
+        echo -e "${YELLOW}⚠️  发现无法终止的进程: $(echo $unkillable_pids | tr '\n' ' ')${NC}"
+        echo -e "${YELLOW}   这些可能是僵尸进程或系统进程，将跳过${NC}"
+    fi
+    
+    # 最终检查可终止的进程
+    local final_killable=$(find_openclaw_processes)
+    local still_running=""
+    for pid in $final_killable; do
+        if is_process_killable $pid; then
+            still_running="$still_running $pid"
+        fi
+    done
+    
+    if [ -z "$still_running" ]; then
+        echo -e "${GREEN}✅ 所有可终止的 OpenClaw 进程已停止${NC}"
         return 0
     else
-        echo -e "${RED}❌ 仍有进程无法停止: $(echo $final_pids | tr '\n' ' ')${NC}"
-        return 1
+        echo -e "${YELLOW}⚠️  部分进程无法停止: $(echo $still_running | tr '\n' ' ')${NC}"
+        echo -e "${YELLOW}   继续尝试启动 Gateway（这些进程可能不影响启动）${NC}"
+        return 0  # 不阻止启动，因为这些进程可能不影响
     fi
 }
 

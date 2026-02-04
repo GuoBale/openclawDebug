@@ -28,6 +28,11 @@
    ./check_python_deps.sh
    ```
 
+5. **`check_node_deps.sh`** - 检查并安装 Node.js 依赖
+   ```bash
+   ./check_node_deps.sh
+   ```
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -80,7 +85,35 @@ Error: Gateway service install not supported on android
 - **现象**（第 29-32 行）：
   - `[plugins]: command not found` 错误（可能是 shell 配置问题）
 
-#### 2.4 Python 依赖缺失问题 ⚠️ 新发现
+#### 2.4 Node.js 依赖缺失问题 ⚠️ 新发现
+- **现象**（第 995-1014 行）：
+  ```
+  [plugins] feishu failed to load: Error: Cannot find module 'zod'
+  Require stack:
+  - /data/data/com.termux/files/home/.openclaw/extensions/feishu/src/config-schema.ts
+  ```
+- **问题分析**：
+  - feishu 插件需要 `zod` 模块（TypeScript 验证库）
+  - 错误发生在加载用户自定义的 feishu 扩展时
+  - 扩展位置：`~/.openclaw/extensions/feishu/`
+  - 全局安装的 feishu 插件正常，但用户扩展缺少依赖
+- **影响**：
+  - 用户自定义的 feishu 扩展无法加载
+  - 可能影响其他自定义扩展的功能
+
+#### 2.5 进程无法完全停止问题 ⚠️ 新发现
+- **现象**（第 979 行）：
+  ```
+  ❌ 仍有进程无法停止: 1354 7197 11067
+  ```
+- **问题分析**：
+  - 部分 OpenClaw 进程无法通过 kill/kill -9 停止
+  - 可能是僵尸进程（Zombie）或系统进程
+  - 这些进程可能不影响新实例启动
+- **影响**：
+  - 启动脚本会显示警告，但 Gateway 仍能成功启动（第 1019 行）
+
+#### 2.6 Python 依赖缺失问题 ⚠️ 新发现
 - **现象**（第 993-1006 行）：
   ```
   [tools] exec failed: Generating QR code for Xiaomi login...
@@ -94,7 +127,7 @@ Error: Gateway service install not supported on android
 - **影响**：
   - 无法使用 mijia 相关功能（如小米登录二维码生成）
 
-#### 2.5 模型提供者速率限制问题 ⚠️ 新发现
+#### 2.7 模型提供者速率限制问题 ⚠️ 新发现
 - **现象**（第 144 行）：
   ```
   Embedded agent failed before reply: All models failed (2): 
@@ -175,7 +208,76 @@ lsof -ti:18789 | xargs kill
 
 检查并修复 feishu 插件的重复注册问题，避免配置警告。
 
-### 方案 4: 解决 Python 依赖缺失问题
+### 方案 4: 解决 Node.js 依赖缺失问题
+
+#### 4.1 安装缺失的依赖
+
+在 Android/Termux 环境中安装 Node.js 依赖：
+
+```bash
+# 方法 1: 在扩展目录安装（推荐）
+cd ~/.openclaw/extensions/feishu
+npm install
+
+# 方法 2: 全局安装
+npm install -g zod
+
+# 方法 3: 使用检查脚本（推荐）
+./check_node_deps.sh
+```
+
+#### 4.2 验证安装
+
+```bash
+# 测试 zod 模块是否可用
+node -e "require('zod'); console.log('zod 安装成功')"
+
+# 检查扩展目录
+ls -la ~/.openclaw/extensions/feishu/node_modules/
+```
+
+#### 4.3 检查扩展依赖
+
+```bash
+# 查看扩展的 package.json
+cat ~/.openclaw/extensions/feishu/package.json
+
+# 如果有 package.json，安装所有依赖
+cd ~/.openclaw/extensions/feishu
+npm install
+```
+
+### 方案 5: 解决进程无法停止问题
+
+#### 5.1 问题说明
+
+部分进程无法停止是正常现象：
+- 可能是僵尸进程（已终止但父进程未回收）
+- 可能是系统进程或受保护进程
+- 这些进程通常不影响新实例启动
+
+#### 5.2 处理方式
+
+启动脚本已改进，会：
+- 识别可终止和不可终止的进程
+- 对不可终止的进程显示警告但不阻止启动
+- 继续尝试启动 Gateway
+
+如果 Gateway 启动成功，可以忽略这些警告。
+
+#### 5.3 手动清理（如需要）
+
+```bash
+# 查看进程状态
+ps aux | grep openclaw
+
+# 查看僵尸进程
+ps aux | grep " Z "
+
+# 如果确实需要清理，可以重启 Termux 或 Android 设备
+```
+
+### 方案 6: 解决 Python 依赖缺失问题
 
 #### 4.1 安装 Pillow 包
 
@@ -215,9 +317,9 @@ pip install qrcode[pil]
 
 **注意**：`qrcode[pil]` 会同时安装 qrcode 和 Pillow。
 
-### 方案 5: 解决模型提供者速率限制问题
+### 方案 7: 解决模型提供者速率限制问题
 
-#### 5.1 检查配置文件
+#### 7.1 检查配置文件
 
 在 Android 设备上检查 OpenClaw 配置文件：
 
@@ -236,7 +338,7 @@ cat ~/.openclaw/config.json
 - `profiles` 配置是否正确
 - `cooldown` 相关设置
 
-#### 5.2 诊断步骤
+#### 7.2 诊断步骤
 
 **快速诊断**（使用提供的脚本）：
 ```bash
@@ -260,7 +362,7 @@ openclaw config path
 cat $(openclaw config path)
 ```
 
-#### 5.3 可能的修复方法
+#### 7.3 可能的修复方法
 
 1. **调整速率限制配置**：
    - 增加 `rate_limit` 的值
