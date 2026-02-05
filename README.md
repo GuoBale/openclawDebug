@@ -61,6 +61,13 @@
     ```
     用于解决 "No interpreter found for Python >=3.13" 和 `/bin/which: cannot execute` 错误
 
+11. **`fix_homeassistant.sh`** - 修复 Home Assistant 配置问题 ⭐ 新增
+    ```bash
+    ./fix_homeassistant.sh [URL] [TOKEN]
+    # 示例: ./fix_homeassistant.sh http://192.168.43.10:8123 eyJhbGci...
+    ```
+    用于修复 "unknown channel id: homeassistant" 错误并正确配置 Home Assistant
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -234,6 +241,29 @@ Error: Gateway service install not supported on android
   - 所有需要 Python 的工具都无法执行
   - 技能脚本（如 mijia 的二维码生成）无法运行
   - 工具调用失败，导致功能受限
+
+#### 2.11 Home Assistant 配置错误问题 ⚠️ 新发现
+- **现象**：
+  ```
+  Invalid config at ~/.openclaw/openclaw.json:
+  - channels.homeassistant: unknown channel id: homeassistant
+  
+  Config invalid
+  Problem:
+    - channels.homeassistant: unknown channel id: homeassistant
+  ```
+- **问题分析**：
+  - 配置文件中存在 `channels.homeassistant` 配置
+  - OpenClaw 不识别 `homeassistant` 作为有效的 channel ID
+  - 可能原因：
+    1. OpenClaw 版本不支持 `homeassistant` channel
+    2. 配置位置错误（应该在 `tools` 下而不是 `channels` 下）
+    3. Channel ID 名称错误或已更改
+    4. 需要安装额外的扩展或插件才能使用 Home Assistant
+- **影响**：
+  - Gateway 无法启动
+  - 配置验证失败，导致启动被阻止
+  - Home Assistant 集成功能无法使用
 
 ### 3. 错误调用链分析
 
@@ -927,6 +957,167 @@ echo "PYTHON_PATH: $PYTHON_PATH"
    - 检查环境变量是否正确设置：`env | grep PYTHON`
    - 在运行 OpenClaw 的同一终端中设置环境变量
 
+### 方案 11: 解决 Home Assistant 配置错误问题
+
+#### 11.1 问题说明
+
+当配置文件中存在 `channels.homeassistant` 配置时，OpenClaw 会报告 `unknown channel id: homeassistant` 错误并阻止 Gateway 启动。
+
+#### 11.2 使用修复脚本（推荐）✨
+
+**快速修复 Home Assistant 配置**：
+
+```bash
+# 使用默认配置（脚本中已包含）
+./fix_homeassistant.sh
+
+# 或指定自定义 URL 和 Token
+./fix_homeassistant.sh http://192.168.43.10:8123 eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+脚本功能：
+- ✅ 自动查找配置文件（包括 openclaw.json）
+- ✅ 移除错误的 `channels.homeassistant` 配置
+- ✅ 可选配置 `tools.homeassistant`（如果支持）
+- ✅ 自动备份配置文件
+- ✅ 显示最终配置状态
+
+#### 11.3 使用 OpenClaw doctor 命令（推荐）✨
+
+**使用官方 doctor 命令自动修复**：
+
+```bash
+# 运行 doctor 自动修复配置问题
+openclaw doctor --fix
+```
+
+这会自动移除无效的配置项。
+
+#### 11.4 手动修复
+
+**步骤 1: 查找配置文件**
+
+```bash
+# 配置文件通常是 openclaw.json
+cat ~/.openclaw/openclaw.json
+```
+
+**步骤 2: 移除错误的配置**
+
+如果安装了 `jq`：
+
+```bash
+# 备份配置文件
+cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.backup
+
+# 移除 channels.homeassistant 配置
+jq 'del(.channels.homeassistant)' ~/.openclaw/openclaw.json > /tmp/config.json
+mv /tmp/config.json ~/.openclaw/openclaw.json
+```
+
+或者手动编辑配置文件，移除 `channels.homeassistant` 部分。
+
+**步骤 3: 验证配置**
+
+```bash
+# 验证 JSON 格式
+jq . ~/.openclaw/openclaw.json
+
+# 检查是否还有 homeassistant 配置
+jq '.channels.homeassistant' ~/.openclaw/openclaw.json
+# 应该返回 null
+```
+
+**步骤 4: 配置 Home Assistant 工具（可选）**
+
+如果 OpenClaw 支持 Home Assistant 工具，可以在 `tools` 下配置：
+
+```json
+{
+  "tools": {
+    "homeassistant": {
+      "url": "http://192.168.43.10:8123",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+  }
+}
+```
+
+使用 `jq` 添加配置：
+
+```bash
+jq '.tools = (.tools // {}) | .tools.homeassistant = {
+  "url": "http://192.168.43.10:8123",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}' ~/.openclaw/openclaw.json > /tmp/config.json
+mv /tmp/config.json ~/.openclaw/openclaw.json
+```
+
+#### 11.5 配置格式说明
+
+**错误的配置** ❌：
+```json
+{
+  "channels": {
+    "homeassistant": {
+      "url": "http://192.168.43.10:8123",
+      "token": "..."
+    }
+  }
+}
+```
+
+**正确的配置** ✅（如果支持）：
+```json
+{
+  "tools": {
+    "homeassistant": {
+      "url": "http://192.168.43.10:8123",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+  }
+}
+```
+
+**关键点**：
+- `channels.homeassistant` 是无效的配置，需要移除
+- Home Assistant 可能需要在 `tools` 下配置，而不是 `channels`
+- 配置文件：`~/.openclaw/openclaw.json`（不是 `config.json`）
+- 如果 OpenClaw 版本不支持 Home Assistant，移除配置即可
+
+#### 11.6 验证修复
+
+```bash
+# 验证 JSON 格式
+jq . ~/.openclaw/openclaw.json
+
+# 运行 doctor 检查配置
+openclaw doctor
+
+# 重启 Gateway
+./kill_gateway.sh && ./start_gateway.sh
+
+# 查看日志确认没有配置错误
+openclaw gateway logs --tail 50
+```
+
+#### 11.7 常见问题排查
+
+1. **配置移除后仍有错误**
+   - 检查是否有多个配置文件
+   - 使用 `openclaw config path` 确认实际使用的配置文件
+   - 运行 `openclaw doctor --fix` 自动修复
+
+2. **Home Assistant 功能不可用**
+   - 确认 OpenClaw 版本是否支持 Home Assistant
+   - 检查是否需要安装额外的扩展或插件
+   - 查看 OpenClaw 文档确认正确的配置方式
+
+3. **Token 或 URL 错误**
+   - 验证 Home Assistant 地址是否可访问
+   - 确认 Token 是否有效且未过期
+   - 检查 Token 权限是否足够
+
 ## 待办事项
 
 - [ ] 分析 `service-BoDHq_LN.js` 源码，定位 Android 检测逻辑
@@ -953,4 +1144,8 @@ echo "PYTHON_PATH: $PYTHON_PATH"
   - [x] 创建 Python 解释器诊断和修复脚本 `fix_python_interpreter.sh`
   - [ ] 在 Android 设备上测试脚本
   - [ ] 验证 Python 解释器检测修复后工具功能正常
+- [x] **解决 Home Assistant 配置错误问题**（已完成脚本）
+  - [x] 创建 Home Assistant 配置修复脚本 `fix_homeassistant.sh`
+  - [ ] 在 Android 设备上测试脚本
+  - [ ] 验证 Home Assistant 配置修复后 Gateway 功能正常
 - [ ] 测试修复后的功能
