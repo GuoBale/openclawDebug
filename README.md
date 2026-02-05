@@ -49,6 +49,12 @@
    ```
    用于诊断和修复 "invalid api key" 认证错误
 
+9. **`fix_brave_search.sh`** - 修复 Brave Search 配置问题 ⭐ 新增
+   ```bash
+   ./fix_brave_search.sh
+   ```
+   用于修复 "Unrecognized key: braveSearch" 错误并正确配置 Brave Search
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -181,6 +187,25 @@ Error: Gateway service install not supported on android
 - **影响**：
   - Gateway 可以启动，但无法处理任何需要调用模型的任务
   - 所有 agent 任务都会失败
+
+#### 2.9 Brave Search 配置错误问题 ⚠️ 新发现
+- **现象**：
+  ```
+  Invalid config at ~/.openclaw/openclaw.json:
+  - tools: Unrecognized key: "braveSearch"
+  
+  Config invalid
+  Problem:
+    - tools: Unrecognized key: "braveSearch"
+  ```
+- **问题分析**：
+  - 用户尝试在 `tools.braveSearch` 下配置 Brave Search API Key
+  - OpenClaw 不识别 `braveSearch` 这个键
+  - 正确的配置路径应该是 `tools.web.search.apiKey`
+  - 配置文件位置：`~/.openclaw/openclaw.json`（注意是 openclaw.json，不是 config.json）
+- **影响**：
+  - Gateway 无法启动
+  - 配置验证失败，导致启动被阻止
 
 ### 3. 错误调用链分析
 
@@ -624,6 +649,118 @@ openclaw gateway logs --tail 50
    - 检查是否有环境变量设置了 API Key
    - 例如：`MINIMAX_API_KEY`、`KIMI_API_KEY` 等
 
+### 方案 9: 解决 Brave Search 配置错误问题
+
+#### 9.1 问题说明
+
+当在配置文件中使用错误的键名 `tools.braveSearch` 时，OpenClaw 会报告配置错误并阻止 Gateway 启动。
+
+#### 9.2 使用修复脚本（推荐）✨
+
+**快速修复 Brave Search 配置**：
+
+```bash
+# 运行修复脚本（已包含 API Key: BSAGA7HtkxoBGCYBzPFEHXwqZ4E4ABo）
+./fix_brave_search.sh
+```
+
+脚本功能：
+- ✅ 自动查找配置文件（包括 openclaw.json）
+- ✅ 移除错误的 `tools.braveSearch` 配置
+- ✅ 正确配置 `tools.web.search.apiKey`
+- ✅ 显示最终配置状态
+
+#### 9.3 使用 OpenClaw 配置命令（推荐）✨
+
+**使用官方配置命令**：
+
+```bash
+# 方法 1: 使用配置向导
+openclaw-cn configure --section web
+# 然后输入 API Key: BSAGA7HtkxoBGCYBzPFEHXwqZ4E4ABo
+
+# 方法 2: 使用 doctor 命令自动修复
+openclaw doctor --fix
+```
+
+#### 9.4 手动修复
+
+**步骤 1: 查找配置文件**
+
+```bash
+# 配置文件可能是 openclaw.json 而不是 config.json
+cat ~/.openclaw/openclaw.json
+```
+
+**步骤 2: 移除错误配置并添加正确配置**
+
+如果安装了 `jq`：
+
+```bash
+# 移除错误的配置
+jq 'del(.tools.braveSearch)' ~/.openclaw/openclaw.json > /tmp/config.json
+mv /tmp/config.json ~/.openclaw/openclaw.json
+
+# 添加正确的配置
+jq '.tools = (.tools // {}) | .tools.web = (.tools.web // {}) | .tools.web.search = (.tools.web.search // {}) | .tools.web.search.apiKey = "BSAGA7HtkxoBGCYBzPFEHXwqZ4E4ABo"' ~/.openclaw/openclaw.json > /tmp/config.json
+mv /tmp/config.json ~/.openclaw/openclaw.json
+```
+
+或者手动编辑配置文件：
+
+```json
+{
+  "tools": {
+    "web": {
+      "search": {
+        "apiKey": "BSAGA7HtkxoBGCYBzPFEHXwqZ4E4ABo"
+      }
+    }
+  }
+}
+```
+
+**步骤 3: 验证配置**
+
+```bash
+# 验证 JSON 格式
+jq . ~/.openclaw/openclaw.json
+
+# 重启 Gateway
+./kill_gateway.sh && ./start_gateway.sh
+```
+
+#### 9.5 配置格式说明
+
+**错误的配置** ❌：
+```json
+{
+  "tools": {
+    "braveSearch": {
+      "api_key": "BSAGA7HtkxoBGCYBzPFEHXwqZ4E4ABo"
+    }
+  }
+}
+```
+
+**正确的配置** ✅：
+```json
+{
+  "tools": {
+    "web": {
+      "search": {
+        "apiKey": "BSAGA7HtkxoBGCYBzPFEHXwqZ4E4ABo"
+      }
+    }
+  }
+}
+```
+
+**关键点**：
+- 配置路径：`tools.web.search.apiKey`（不是 `tools.braveSearch`）
+- 键名：`apiKey`（不是 `api_key`）
+- 配置文件：`~/.openclaw/openclaw.json`（不是 `config.json`）
+
 ## 待办事项
 
 - [ ] 分析 `service-BoDHq_LN.js` 源码，定位 Android 检测逻辑
@@ -642,4 +779,8 @@ openclaw gateway logs --tail 50
   - [x] 创建 API Key 配置检查和修复脚本 `fix_api_keys.sh`
   - [ ] 在 Android 设备上测试脚本
   - [ ] 验证 API Key 配置后 Gateway 功能正常
+- [x] **解决 Brave Search 配置错误问题**（已完成脚本）
+  - [x] 创建 Brave Search 配置修复脚本 `fix_brave_search.sh`
+  - [ ] 在 Android 设备上测试脚本
+  - [ ] 验证 Brave Search 配置后 Gateway 功能正常
 - [ ] 测试修复后的功能
