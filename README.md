@@ -68,6 +68,12 @@
     ```
     用于修复 "unknown channel id: homeassistant" 错误并正确配置 Home Assistant
 
+12. **`fix_tool_call_error.sh`** - 诊断和修复工具调用错误 ⭐ 新增
+    ```bash
+    ./fix_tool_call_error.sh
+    ```
+    用于诊断和修复 "tool result's tool id not found (2013)" 错误
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -1118,6 +1124,161 @@ openclaw gateway logs --tail 50
    - 确认 Token 是否有效且未过期
    - 检查 Token 权限是否足够
 
+### 方案 12: 解决工具调用错误问题
+
+#### 12.1 问题说明
+
+当出现 `LLM request rejected: invalid params, tool result's tool id not found (2013)` 错误时，说明工具调用系统在处理 LLM 返回的工具结果时出现了问题。
+
+**错误信息**：
+```
+LLM request rejected: invalid params, tool result's tool id(call_function_3d3hh1l69xcj_1) not found (2013)
+```
+
+**问题分析**：
+- LLM 返回的工具结果中，工具 ID 与请求时的 ID 不一致
+- 可能是工具调用系统在处理异步结果时出现问题
+- 工具调用过程中 Gateway 重启或连接中断
+- 工具执行时间过长导致 ID 过期
+- 工具配置不正确导致调用失败
+
+**影响**：
+- LLM 无法正常调用工具
+- Agent 任务可能失败
+- 功能受限
+
+#### 12.2 使用修复脚本（推荐）✨
+
+**快速诊断和修复工具调用错误**：
+
+```bash
+# 运行诊断脚本
+./fix_tool_call_error.sh
+```
+
+脚本功能：
+- ✅ 检查 Gateway 运行状态
+- ✅ 检查配置文件（tools、providers、agent）
+- ✅ 检查 Gateway 日志中的相关错误
+- ✅ 检查 Node.js 和 OpenClaw 版本
+- ✅ 提供详细的修复建议
+
+#### 12.3 手动修复步骤
+
+**步骤 1: 重启 Gateway（最常见解决方案）**
+
+```bash
+# 停止 Gateway
+./kill_gateway.sh
+
+# 等待几秒确保进程完全停止
+sleep 3
+
+# 启动 Gateway
+./start_gateway.sh
+```
+
+**步骤 2: 检查工具配置**
+
+```bash
+# 查找配置文件
+openclaw config path
+# 或
+cat ~/.openclaw/config.json
+
+# 检查 tools 配置
+jq '.tools' ~/.openclaw/config.json
+```
+
+确保工具配置正确，移除或修复有问题的工具配置。
+
+**步骤 3: 检查模型提供者配置**
+
+```bash
+# 使用 API Key 修复脚本
+./fix_api_keys.sh
+
+# 或手动检查
+jq '.providers' ~/.openclaw/config.json
+```
+
+**步骤 4: 查看详细日志**
+
+```bash
+# 查看最近的错误日志
+openclaw gateway logs --tail 100 | grep -i tool
+
+# 查看所有错误
+openclaw gateway logs --tail 100 | grep -i error
+```
+
+**步骤 5: 检查工具调用超时设置**
+
+如果工具执行时间过长，可能需要增加超时设置：
+
+```json
+{
+  "agent": {
+    "timeout": 30000
+  }
+}
+```
+
+**步骤 6: 临时禁用有问题的工具**
+
+如果特定工具导致问题，可以临时禁用它：
+
+```bash
+# 编辑配置文件，移除或注释相关工具配置
+jq 'del(.tools.problematic_tool)' ~/.openclaw/config.json > /tmp/config.json
+mv /tmp/config.json ~/.openclaw/config.json
+```
+
+**步骤 7: 更新 OpenClaw**
+
+```bash
+# 更新到最新版本
+npm update -g openclaw
+
+# 或安装最新版本
+npm install -g openclaw@latest
+```
+
+#### 12.4 常见问题排查
+
+1. **重启后问题仍然存在**
+   - 检查是否有多个 Gateway 实例在运行
+   - 清理所有 OpenClaw 进程：`pkill -f openclaw`
+   - 检查锁文件：`rm -f ~/.openclaw/.gateway.lock`
+
+2. **特定工具导致问题**
+   - 检查该工具的配置是否正确
+   - 验证工具依赖是否已安装
+   - 查看工具执行日志
+
+3. **工具调用超时**
+   - 增加 agent 超时配置
+   - 检查工具执行时间
+   - 优化工具实现
+
+4. **模型提供者问题**
+   - 检查 API Key 是否有效
+   - 验证模型提供者服务状态
+   - 检查网络连接
+
+#### 12.5 验证修复
+
+```bash
+# 1. 确认 Gateway 正常运行
+pgrep -f "openclaw.*gateway"
+
+# 2. 查看日志确认没有错误
+openclaw gateway logs --tail 50
+
+# 3. 测试工具调用
+# 通过 OpenClaw 客户端发送一个需要工具调用的请求
+```
+
 ## 待办事项
 
 - [ ] 分析 `service-BoDHq_LN.js` 源码，定位 Android 检测逻辑
@@ -1148,4 +1309,8 @@ openclaw gateway logs --tail 50
   - [x] 创建 Home Assistant 配置修复脚本 `fix_homeassistant.sh`
   - [ ] 在 Android 设备上测试脚本
   - [ ] 验证 Home Assistant 配置修复后 Gateway 功能正常
+- [x] **解决工具调用错误问题**（已完成脚本）
+  - [x] 创建工具调用错误诊断和修复脚本 `fix_tool_call_error.sh`
+  - [ ] 在 Android 设备上测试脚本
+  - [ ] 验证工具调用错误修复后功能正常
 - [ ] 测试修复后的功能
