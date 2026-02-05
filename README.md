@@ -55,6 +55,12 @@
    ```
    用于修复 "Unrecognized key: braveSearch" 错误并正确配置 Brave Search
 
+10. **`fix_python_interpreter.sh`** - 诊断和修复 Python 解释器问题 ⭐ 新增
+    ```bash
+    ./fix_python_interpreter.sh
+    ```
+    用于解决 "No interpreter found for Python >=3.13" 和 `/bin/which: cannot execute` 错误
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -206,6 +212,28 @@ Error: Gateway service install not supported on android
 - **影响**：
   - Gateway 无法启动
   - 配置验证失败，导致启动被阻止
+
+#### 2.10 Python 解释器检测问题 ⚠️ 新发现
+- **现象**：
+  ```
+  [tools] exec failed: error: No interpreter found for Python >=3.13 in managed installations or search path
+  [tools] exec failed: Python 3.12.12
+  /data/data/com.termux/files/usr/bin/bash: line 1: /bin/which: cannot execute: required file not found
+  ```
+- **问题分析**：
+  - OpenClaw 工具系统尝试检测 Python 解释器时失败
+  - 错误信息显示需要 Python >= 3.13，但系统只有 Python 3.12.12
+  - `/bin/which` 命令在 Termux 环境中不存在或无法执行
+  - 工具系统可能使用了不兼容的命令来查找 Python 解释器
+  - 可能原因：
+    1. Termux 环境中 `/bin/which` 不存在（需要使用 `command -v` 或 `whereis`）
+    2. Python 版本检测逻辑过于严格（要求 >= 3.13）
+    3. 环境变量 PATH 配置不正确
+    4. Python 解释器路径未正确设置
+- **影响**：
+  - 所有需要 Python 的工具都无法执行
+  - 技能脚本（如 mijia 的二维码生成）无法运行
+  - 工具调用失败，导致功能受限
 
 ### 3. 错误调用链分析
 
@@ -761,6 +789,144 @@ jq . ~/.openclaw/openclaw.json
 - 键名：`apiKey`（不是 `api_key`）
 - 配置文件：`~/.openclaw/openclaw.json`（不是 `config.json`）
 
+### 方案 10: 解决 Python 解释器检测问题
+
+#### 10.1 问题说明
+
+当 OpenClaw 工具系统无法检测到 Python 解释器时，会出现 `No interpreter found for Python >=3.13` 和 `/bin/which: cannot execute` 错误。
+
+#### 10.2 使用修复脚本（推荐）✨
+
+**快速诊断和修复 Python 解释器问题**：
+
+```bash
+# 运行诊断脚本
+./fix_python_interpreter.sh
+```
+
+脚本功能：
+- ✅ 自动检测 Termux 环境
+- ✅ 使用多种方法查找 Python 解释器（command -v、直接测试、路径查找）
+- ✅ 检查 Python 版本和可执行性
+- ✅ 诊断 `which` 命令问题
+- ✅ 生成环境变量配置脚本
+- ✅ 提供详细的修复建议
+
+#### 10.3 手动修复步骤
+
+**步骤 1: 检查 Python 是否安装**
+
+```bash
+# 方法 1: 使用 command -v（推荐，兼容性最好）
+command -v python3
+command -v python
+
+# 方法 2: 直接测试
+python3 --version
+python --version
+
+# 方法 3: 在 Termux 中查找
+ls -la $PREFIX/bin/python*
+```
+
+**步骤 2: 修复 which 命令问题**
+
+```bash
+# 方法 1: 安装 which 命令（如果可用）
+pkg install debianutils
+
+# 方法 2: 使用 command -v 替代 which
+alias which='command -v'
+
+# 方法 3: 创建 which 的符号链接（如果系统有但路径不对）
+# 通常不需要，command -v 更可靠
+```
+
+**步骤 3: 设置环境变量**
+
+```bash
+# 查找 Python 路径
+PYTHON_CMD=$(command -v python3 || command -v python)
+PYTHON_PATH=$PYTHON_CMD
+
+# 设置环境变量
+export PYTHON_CMD="$PYTHON_CMD"
+export PYTHON_PATH="$PYTHON_PATH"
+
+# 添加到 PATH（如果需要）
+export PATH="$(dirname "$PYTHON_PATH"):$PATH"
+```
+
+**步骤 4: 永久配置**
+
+将环境变量添加到 shell 配置文件：
+
+```bash
+# 对于 bash
+echo 'export PYTHON_CMD="$(command -v python3 || command -v python)"' >> ~/.bashrc
+echo 'export PYTHON_PATH="$PYTHON_CMD"' >> ~/.bashrc
+alias which='command -v' >> ~/.bashrc
+
+# 对于 zsh
+echo 'export PYTHON_CMD="$(command -v python3 || command -v python)"' >> ~/.zshrc
+echo 'export PYTHON_PATH="$PYTHON_CMD"' >> ~/.zshrc
+alias which='command -v' >> ~/.zshrc
+
+# 重新加载配置
+source ~/.bashrc  # 或 source ~/.zshrc
+```
+
+#### 10.4 使用自动生成的修复脚本
+
+诊断脚本会在 `~/.openclaw/fix_python_env.sh` 生成一个修复脚本：
+
+```bash
+# 在运行 OpenClaw 之前执行
+source ~/.openclaw/fix_python_env.sh
+
+# 或者添加到 shell 配置文件
+echo 'source ~/.openclaw/fix_python_env.sh' >> ~/.bashrc
+```
+
+#### 10.5 验证修复
+
+```bash
+# 测试 Python 是否可用
+$PYTHON_CMD --version
+
+# 测试 Python 基本功能
+$PYTHON_CMD -c "import sys; print(sys.version)"
+
+# 测试 which 替代方案
+command -v python3
+
+# 检查环境变量
+echo "PYTHON_CMD: $PYTHON_CMD"
+echo "PYTHON_PATH: $PYTHON_PATH"
+```
+
+#### 10.6 常见问题排查
+
+1. **Python 版本不满足要求（需要 >= 3.13）**
+   - 检查工具是否真的需要 Python 3.13，或者是否可以降级要求
+   - 如果必须使用 Python 3.13，考虑使用 pyenv 安装
+   - 在 Termux 中，Python 版本由 pkg 管理，可能需要等待更新
+
+2. **which 命令持续失败**
+   - 优先使用 `command -v` 替代 `which`
+   - 安装 debianutils 包：`pkg install debianutils`
+   - 检查 PATH 环境变量是否正确
+
+3. **Python 路径找不到**
+   - 确认 Python 已正确安装：`pkg install python`（Termux）
+   - 检查 PATH 是否包含 Python 目录
+   - 使用绝对路径：`/data/data/com.termux/files/usr/bin/python3`
+
+4. **环境变量未生效**
+   - 确认已重新加载 shell 配置：`source ~/.bashrc`
+   - 检查环境变量是否正确设置：`env | grep PYTHON`
+   - 在运行 OpenClaw 的同一终端中设置环境变量
+
 ## 待办事项
 
 - [ ] 分析 `service-BoDHq_LN.js` 源码，定位 Android 检测逻辑
@@ -783,4 +949,8 @@ jq . ~/.openclaw/openclaw.json
   - [x] 创建 Brave Search 配置修复脚本 `fix_brave_search.sh`
   - [ ] 在 Android 设备上测试脚本
   - [ ] 验证 Brave Search 配置后 Gateway 功能正常
+- [x] **解决 Python 解释器检测问题**（已完成脚本）
+  - [x] 创建 Python 解释器诊断和修复脚本 `fix_python_interpreter.sh`
+  - [ ] 在 Android 设备上测试脚本
+  - [ ] 验证 Python 解释器检测修复后工具功能正常
 - [ ] 测试修复后的功能
