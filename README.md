@@ -43,6 +43,12 @@
    ./fix_duplicate_plugin.sh
    ```
 
+8. **`fix_api_keys.sh`** - 检查和修复 API Key 配置问题 ⭐ 新增
+   ```bash
+   ./fix_api_keys.sh
+   ```
+   用于诊断和修复 "invalid api key" 认证错误
+
 ## 问题描述
 
 在 Android 设备（通过 SSH 连接）上运行 OpenClaw 时遇到以下错误：
@@ -155,6 +161,26 @@ Error: Gateway service install not supported on android
     2. 提供者配置文件中的 `rate_limit` 或 `cooldown` 设置问题
     3. Profiles 配置错误导致无法使用
     4. 短时间内请求过多触发临时限制
+
+#### 2.8 API Key 认证错误问题 ⚠️ 新发现
+- **现象**：
+  ```
+  [diagnostic] lane task error: lane=main durationMs=3401 error="FailoverError: HTTP 401 authentication_error: invalid api key (request_id: ...)"
+  [diagnostic] lane task error: lane=session:agent:main:main durationMs=3445 error="FailoverError: HTTP 401 authentication_error: invalid api key (request_id: ...)"
+  ```
+- **问题分析**：
+  - Gateway 启动成功，但在调用模型 API 时返回 401 认证错误
+  - 错误信息：`HTTP 401 authentication_error: invalid api key`
+  - 通常发生在使用 minimax 或其他模型提供者时
+  - 可能原因：
+    1. API Key 未配置或配置错误
+    2. API Key 已过期或无效
+    3. API Key 配置在错误的配置文件中
+    4. 配置文件格式错误（JSON 语法错误）
+    5. 环境变量覆盖了配置文件中的设置
+- **影响**：
+  - Gateway 可以启动，但无法处理任何需要调用模型的任务
+  - 所有 agent 任务都会失败
 
 ### 3. 错误调用链分析
 
@@ -487,6 +513,117 @@ cat $(openclaw config path)
    - 确认 Android 设备可以正常访问 API 服务
    - 检查是否有防火墙或代理问题
 
+### 方案 8: 解决 API Key 认证错误问题
+
+#### 8.1 问题说明
+
+当 Gateway 启动后出现 `HTTP 401 authentication_error: invalid api key` 错误时，说明模型提供者的 API Key 配置有问题。
+
+#### 8.2 使用修复脚本（推荐）✨
+
+**快速检查和修复 API Key 配置**：
+
+```bash
+# 运行 API Key 配置工具
+./fix_api_keys.sh
+```
+
+脚本功能：
+- ✅ 自动查找 OpenClaw 配置文件
+- ✅ 检查当前 API Key 配置状态
+- ✅ 交互式设置/更新 Minimax API Key
+- ✅ 交互式设置/更新 Kimi-coding API Key
+- ✅ 测试 API Key 有效性（如果已配置）
+- ✅ 提供配置帮助和示例
+
+#### 8.3 手动检查和修复
+
+**步骤 1: 查找配置文件**
+
+```bash
+# 方法 1: 使用 openclaw 命令
+openclaw config path
+
+# 方法 2: 检查常见位置
+cat ~/.config/openclaw/config.json
+# 或
+cat ~/.openclaw/config.json
+```
+
+**步骤 2: 检查 API Key 配置**
+
+```bash
+# 如果安装了 jq
+jq '.providers.minimax' ~/.openclaw/config.json
+jq '.providers["kimi-coding"]' ~/.openclaw/config.json
+
+# 或者直接查看配置文件
+cat ~/.openclaw/config.json | grep -A 5 "minimax"
+```
+
+**步骤 3: 设置 API Key**
+
+**方法 A: 使用 openclaw 命令（如果支持）**
+
+```bash
+# 检查是否支持配置命令
+openclaw config set providers.minimax.api_key "your-api-key"
+```
+
+**方法 B: 手动编辑配置文件**
+
+编辑配置文件（通常是 `~/.openclaw/config.json`），添加或修改 `providers` 部分：
+
+```json
+{
+  "providers": {
+    "minimax": {
+      "api_key": "your-minimax-api-key-here"
+    },
+    "kimi-coding": {
+      "api_key": "your-kimi-api-key-here"
+    }
+  }
+}
+```
+
+**步骤 4: 获取 API Key**
+
+- **Minimax**: https://platform.minimax.chat/
+  - 登录后，在控制台创建 API Key
+- **Kimi-coding (Moonshot)**: https://platform.moonshot.cn/
+  - 登录后，在控制台创建 API Key
+
+**步骤 5: 验证配置**
+
+```bash
+# 重启 Gateway
+./kill_gateway.sh
+./start_gateway.sh
+
+# 查看日志确认是否还有错误
+openclaw gateway logs --tail 50
+```
+
+#### 8.4 常见问题排查
+
+1. **API Key 已配置但仍报错**
+   - 检查 API Key 是否有效（可能已过期）
+   - 确认 API Key 格式正确（没有多余空格）
+   - 验证 API Key 是否有足够的权限和额度
+
+2. **配置文件格式错误**
+   - 使用 JSON 验证工具检查语法：`jq . config.json`
+   - 确保 JSON 格式正确（逗号、引号等）
+
+3. **多个配置文件**
+   - OpenClaw 可能从多个位置读取配置
+   - 使用 `openclaw config path` 确认实际使用的配置文件
+
+4. **环境变量覆盖**
+   - 检查是否有环境变量设置了 API Key
+   - 例如：`MINIMAX_API_KEY`、`KIMI_API_KEY` 等
+
 ## 待办事项
 
 - [ ] 分析 `service-BoDHq_LN.js` 源码，定位 Android 检测逻辑
@@ -501,4 +638,8 @@ cat $(openclaw config path)
   - [ ] 验证 minimax 和 kimi-coding 的 API keys 配置
   - [ ] 检查 profiles 配置是否正确
   - [ ] 测试调整速率限制后的效果
+- [x] **解决 API Key 认证错误问题**（已完成脚本）
+  - [x] 创建 API Key 配置检查和修复脚本 `fix_api_keys.sh`
+  - [ ] 在 Android 设备上测试脚本
+  - [ ] 验证 API Key 配置后 Gateway 功能正常
 - [ ] 测试修复后的功能
